@@ -5,8 +5,8 @@ The application connects to and Monitors nodes on the Bitcoin network. It includ
 #### Blockchain Headers
 A local copy of the Blockchain headers are synchronised with the connected nodes.
 
-#### Know Address
-A cache of node address is kept to aid node discovery and connection to the Bitcoin network.
+#### Know Nodes
+A cache of node ip addresses is kept to aid node discovery and connection to the Bitcoin network.
 
 #### Node Connection State
 The connection state of each node is monitored and changes reported.
