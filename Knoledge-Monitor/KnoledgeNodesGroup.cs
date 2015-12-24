@@ -25,7 +25,7 @@ namespace Knoledge_Monitor
             {
                 while (!_cts.IsCancellationRequested)
                 {
-                    foreach (Node node in this.ConnectedNodes)
+                    foreach (Node node in ConnectedNodes)
                     {
                         if (!_nodes.Contains(node))
                         {
