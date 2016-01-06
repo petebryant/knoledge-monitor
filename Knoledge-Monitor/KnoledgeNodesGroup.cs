@@ -27,6 +27,8 @@ namespace Knoledge_Monitor
                 {
                     foreach (Node node in ConnectedNodes)
                     {
+                        if (_cts.IsCancellationRequested) return;
+
                         if (!_nodes.Contains(node))
                         {
                             _nodes.Add(node);
@@ -59,6 +61,12 @@ namespace Knoledge_Monitor
                 return _nodes.FirstOrDefault(n => n.State == NodeState.Connected ||
                                                     n.State == NodeState.HandShaked);
             }
+        }
+
+        public new void Disconnect()
+        {
+            _cts.Cancel(false);
+            base.Disconnect();
         }
 
         private void AddHandlers(Node node)
@@ -114,7 +122,8 @@ namespace Knoledge_Monitor
 
             if (disposing)
             {
-                _cts.Cancel();
+                _cts.Cancel(false);
+
                 foreach (Node node in _nodes)
                 {
                     RemoveHandlers(node);

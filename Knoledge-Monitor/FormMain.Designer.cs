@@ -20,6 +20,7 @@
             this.fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.networkToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.comboBoxNetwork = new System.Windows.Forms.ToolStripComboBox();
             this.localToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem1 = new System.Windows.Forms.ToolStripSeparator();
             this.connectToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -66,12 +67,26 @@
             // 
             this.networkToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.localToolStripMenuItem,
+            this.comboBoxNetwork,
             this.toolStripMenuItem1,
             this.connectToolStripMenuItem,
             this.disconnectToolStripMenuItem});
             this.networkToolStripMenuItem.Name = "networkToolStripMenuItem";
             this.networkToolStripMenuItem.Size = new System.Drawing.Size(91, 29);
             this.networkToolStripMenuItem.Text = "&Network";
+            // 
+            // comboBoxNetwork
+            // 
+            this.comboBoxNetwork.AutoCompleteMode = System.Windows.Forms.AutoCompleteMode.SuggestAppend;
+            this.comboBoxNetwork.AutoCompleteSource = System.Windows.Forms.AutoCompleteSource.ListItems;
+            this.comboBoxNetwork.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.comboBoxNetwork.Enabled = false;
+            this.comboBoxNetwork.Items.AddRange(new object[] {
+            "TestNet",
+            "Main"});
+            this.comboBoxNetwork.Name = "comboBoxNetwork";
+            this.comboBoxNetwork.Size = new System.Drawing.Size(121, 33);
+            this.comboBoxNetwork.SelectedIndexChanged += new System.EventHandler(this.comboBoxNetwork_SelectedIndexChanged);
             // 
             // localToolStripMenuItem
             // 
@@ -117,13 +132,13 @@
             this.statusStrip.ShowItemToolTips = true;
             this.statusStrip.Size = new System.Drawing.Size(1230, 30);
             this.statusStrip.SizingGrip = false;
-            this.statusStrip.TabIndex = 1;
+            this.statusStrip.TabIndex = 2;
             this.statusStrip.Text = "statusStrip1";
             // 
             // labelStatus
             // 
             this.labelStatus.Name = "labelStatus";
-            this.labelStatus.Size = new System.Drawing.Size(1112, 25);
+            this.labelStatus.Size = new System.Drawing.Size(1158, 25);
             this.labelStatus.Spring = true;
             this.labelStatus.Text = "Not connected...";
             this.labelStatus.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
@@ -139,6 +154,7 @@
             this.buttonStatus.Size = new System.Drawing.Size(20, 28);
             this.buttonStatus.Text = "Connected to 0 Nodes";
             this.buttonStatus.ToolTipText = "Connected to 0 Nodes";
+            this.buttonStatus.Click += new System.EventHandler(this.buttonStatus_Click);
             // 
             // buttonInfo
             // 
@@ -207,6 +223,7 @@
         private System.Windows.Forms.ToolStripDropDownButton buttonStatus;
         private System.Windows.Forms.ToolStripDropDownButton buttonInfo;
         private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabel1;
+        private System.Windows.Forms.ToolStripComboBox comboBoxNetwork;
     }
 }
 

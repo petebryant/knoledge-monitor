@@ -22,32 +22,38 @@ namespace Knoledge_Monitor
 {
     public partial class FormMain : Form
     {
-
-        [DllImport("wininet.dll")]
-        private extern static bool InternetGetConnectedState(out int description, int reservedValue);
-
         bool _isClosing = false;
         bool _connecting = false;
         bool _disposed = false;
+        bool _gettingChain = false;
         object _padlock = new object();
         KnoledgeNodesGroup _group;
         Node _node;
         NodeConnectionParameters _connectionParameters;
         ConcurrentChain _chain;
         ConcurrentChain _localChain;
-        CancellationTokenSource _cts = new CancellationTokenSource();
         IPAddress _localIPAddress = null;
         IPAddress _oldIPAddress = null;
         System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer();
-
+        int _selectedNetwork = 0;
+        bool _initialised = false;
         public FormMain()
         {
             InitializeComponent();
+            comboBoxNetwork.SelectedIndex = _selectedNetwork;
+            _initialised = true;
+
         }
 
         private Network Network
         {
-            get { return Network.TestNet; }
+            get 
+            {
+                if (_selectedNetwork == 1)
+                    return Network.Main; 
+                else
+                    return Network.TestNet; 
+            }
         }
 
         private bool LocalConnection
@@ -186,10 +192,11 @@ namespace Knoledge_Monitor
                 method.Invoke();
         }
 
-        private void EnableMenus(bool local, bool connect, bool disconnect)
+        private void EnableMenus(bool network, bool local, bool connect, bool disconnect)
         {
             MethodInvoker method = delegate
             {
+                comboBoxNetwork.Enabled = network;
                 localToolStripMenuItem.Enabled = local;
                 connectToolStripMenuItem.Enabled = connect;
                 disconnectToolStripMenuItem.Enabled = disconnect;
@@ -218,7 +225,7 @@ namespace Knoledge_Monitor
         private void UpdateUIAsNotConnected()
         {
             CheckLocalToolStripMenu(true);
-            EnableMenus(false, true, false);
+            EnableMenus(true, false, true, false);
             UpdateText(string.Format("{0} - No connections are available", DateTime.Now));
 
             UpdateUIAsync();
@@ -325,7 +332,7 @@ namespace Knoledge_Monitor
 
         private Task<ConcurrentChain> GetChain()
         {
-            Task<ConcurrentChain> t = Task < ConcurrentChain>.Factory.StartNew(() => 
+            Task<ConcurrentChain> t = Task<ConcurrentChain>.Factory.StartNew(() => 
             {
                 ConcurrentChain chain = new ConcurrentChain();
                 try
@@ -341,14 +348,14 @@ namespace Knoledge_Monitor
                 }
 
                 return chain;
-            }, _cts.Token);
+            });
 
             return t;
         }
 
         public async void Connect()
         {
-            EnableMenus(false, false, true);
+            EnableMenus(false, false, false, true);
             UpdateText(string.Format("{0} - Connecting to {1}...", DateTime.Now, Network.ToString()));
 
             await ConnectAsync();
@@ -388,6 +395,8 @@ namespace Knoledge_Monitor
 
         public Task ConnectAsync()
         {
+            if (_connecting) return null;
+
             Task t = Task.Factory.StartNew(() =>
             {
                 try
@@ -430,7 +439,7 @@ namespace Knoledge_Monitor
                 }
                 catch (Exception e)
                 {
-                    EnableMenus(true, true, false);
+                    EnableMenus(true, true, true, false);
                     UpdateText(string.Format("{0} - Connection Failed...{1}", DateTime.Now, e.Message));
 
                     if (_localIPAddress == null)
@@ -443,7 +452,7 @@ namespace Knoledge_Monitor
                         _connecting = false;
                     }
                 }
-            }, _cts.Token);
+            });
 
             return t;
         }
@@ -465,12 +474,12 @@ namespace Knoledge_Monitor
         private bool IsInternetAvailable()
         {
             int description;
-            return InternetGetConnectedState(out description, 0);
+            return NativeCalls.InternetGetConnectedState(out description, 0);
         }
 
         private void Disconnect()
         {
-            EnableMenus(true, true, false);
+            EnableMenus(true, true, true, false);
             UpdateText(string.Format("{0} - Disconnecting...", DateTime.Now));
 
             if (_group != null)
@@ -479,13 +488,7 @@ namespace Knoledge_Monitor
             if (_node != null && _node.IsConnected)
                 _node.Disconnect();
 
-
             UpdateText(string.Format("{0} - Disconnected...", DateTime.Now));
-
-            if (_localIPAddress == null)
-                UpdateUIAsNotConnected();
-
-            UpdateUIAsync();
         }
 
         private void Node_MessageReceived(Node node, IncomingMessage message)
@@ -496,14 +499,15 @@ namespace Knoledge_Monitor
 
         private void Node_Disconnected(Node node)
         {
-            string text = string.Format("{0} - Node has disconnected {1}", DateTime.Now, node.DisconnectReason);
-            UpdateText(text);
+            string text = string.Format("{0} - Node has disconnected", DateTime.Now);
 
-            if (CanConnect())
-                Disconnect();
+            if (!string.IsNullOrEmpty(node.DisconnectReason.Reason))
+                text = string.Format("{0} - Node has disconnected {1}", DateTime.Now, node.DisconnectReason.Reason);
+
+            UpdateText(text);
         }
 
-        private void Node_StateChanged(Node node, NodeState oldState)
+        private async void Node_StateChanged(Node node, NodeState oldState)
         {
             string text = string.Format("{0} - Node state changed to {1}.", DateTime.Now, node.State);
             UpdateText(text);
@@ -522,11 +526,8 @@ namespace Knoledge_Monitor
 
                 if (_chain.Genesis != null)
                 {
-                    string speed;
                     var snap = node.Counter.Snapshot();
-                    node.GetBlocks(new uint256[] { _chain.Genesis.HashBlock });
-                    speed = (node.Counter.Snapshot() - snap).ToString();
-                    UpdateText(string.Format("{0} - Speed {1}", DateTime.Now, speed));
+                    UpdateText(string.Format("{0} - Performance {1}", DateTime.Now, snap.ToString()));
                 }
 
                 var behavior = node.Behaviors.Find<PingPongBehavior>();
@@ -537,16 +538,32 @@ namespace Knoledge_Monitor
                 }
 
                 if (_chain.Tip == null || node.PeerVersion.StartHeight < _localChain.Height)
-                {
-                    Task.Factory.StartNew(() =>
-                    {
-                        _chain = node.GetChain();
-                        SaveChainToDisk();
-                        DisplayLocalInfo();
-                    }, _cts.Token);
-
-                }
+                    await GetChainFromNode(node);
             }
+        }
+
+        private Task GetChainFromNode(Node node)
+        {
+            Task t = Task.Factory.StartNew(() =>
+            {
+                if (_gettingChain) return;
+
+                lock (_padlock)
+                {
+                    _gettingChain = true;
+                }
+
+                _chain = node.GetChain();
+                SaveChainToDisk();
+                DisplayLocalInfo();
+
+                lock (_padlock)
+                {
+                    _gettingChain = false;
+                }
+            });
+
+            return t;
         }
 
         private Task SaveAsync()
@@ -600,7 +617,7 @@ namespace Knoledge_Monitor
         private void FormMain_FormClosing(object sender, FormClosingEventArgs e)
         {
             _isClosing = true;
-            _cts.Cancel();
+
             Disconnect();
         }
 
@@ -637,14 +654,13 @@ namespace Knoledge_Monitor
             if (_localIPAddress == null)
                 Disconnect();
             else
-                EnableMenus(true, true, false);
+                EnableMenus(true, true, true, false);
 
             _oldIPAddress = _localIPAddress;
         }
 
         private async void FormMain_Shown(object sender, EventArgs e)
         {
-            _cts = new CancellationTokenSource();
             _chain = await GetChain();
             _localChain = _chain.Clone();
 
@@ -667,7 +683,6 @@ namespace Knoledge_Monitor
                    components.Dispose();
 
                 NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
-                _cts.Cancel();
 
                 if (_group != null)
                 {
@@ -688,5 +703,23 @@ namespace Knoledge_Monitor
         }
 
         #endregion
+
+        private void comboBoxNetwork_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_initialised)
+            _selectedNetwork = comboBoxNetwork.SelectedIndex;
+
+        }
+
+        private void buttonStatus_Click(object sender, EventArgs e)
+        {
+            if (!CanConnect())
+            {
+                using (FormNodes form = new FormNodes(_group))
+                {
+                    form.ShowDialog();
+                }
+            }
+        }
     }
 }
