@@ -1,15 +1,7 @@
-﻿using NBitcoin;
-using NBitcoin.Protocol;
+﻿using NBitcoin.Protocol;
 using NBitcoin.Protocol.Behaviors;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace Knoledge_Monitor
@@ -17,7 +9,6 @@ namespace Knoledge_Monitor
     public partial class FormNodes : Form
     {
         KnoledgeNodesGroup _group;
-        PerformanceSnapshot _snap;
         CancellationTokenSource _cts = new CancellationTokenSource();
 
         public FormNodes(KnoledgeNodesGroup group)
@@ -48,6 +39,9 @@ namespace Knoledge_Monitor
                 item.Tag = node;
                 listView.Items.Add(item);
             }
+
+            listView.Items[0].Selected = true;
+            listView.Select();
         }
 
         private void listView_SelectedIndexChanged(object sender, EventArgs e)
@@ -61,8 +55,13 @@ namespace Knoledge_Monitor
                 if (node != null)
                 {
                     textBoxAt.Text = node.ConnectedAt.ToString();
-                    textBoxHeight.Text = node.PeerVersion.StartHeight.ToString();
-                    textBoxVersion.Text = node.PeerVersion.UserAgent;
+
+                    if (node.PeerVersion != null)
+                    {
+                        textBoxHeight.Text = node.PeerVersion.StartHeight.ToString();
+                        textBoxVersion.Text = node.PeerVersion.UserAgent;
+                    }
+
                     textBoxSeen.Text = node.LastSeen.LocalDateTime.ToString();
 
                     var snap = node.Counter.Snapshot();

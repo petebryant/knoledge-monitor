@@ -1,19 +1,12 @@
-﻿using Knoledge_Monitor;
-using NBitcoin;
+﻿using NBitcoin;
 using NBitcoin.Protocol;
 using NBitcoin.Protocol.Behaviors;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -26,6 +19,8 @@ namespace Knoledge_Monitor
         bool _connecting = false;
         bool _disposed = false;
         bool _gettingChain = false;
+        bool _saving = false;
+        bool _updatingUI = false;
         object _padlock = new object();
         KnoledgeNodesGroup _group;
         Node _node;
@@ -34,6 +29,7 @@ namespace Knoledge_Monitor
         ConcurrentChain _localChain;
         IPAddress _localIPAddress = null;
         IPAddress _oldIPAddress = null;
+        CancellationTokenSource _cts = new CancellationTokenSource();
         System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer();
         int _selectedNetwork = 0;
         bool _initialised = false;
@@ -194,6 +190,8 @@ namespace Knoledge_Monitor
 
         private void EnableMenus(bool network, bool local, bool connect, bool disconnect)
         {
+            if (_isClosing) return;
+
             MethodInvoker method = delegate
             {
                 comboBoxNetwork.Enabled = network;
@@ -228,21 +226,19 @@ namespace Knoledge_Monitor
             EnableMenus(true, false, true, false);
             UpdateText(string.Format("{0} - No connections are available", DateTime.Now));
 
-            UpdateUIAsync();
-        }
-
-        private Task UpdateUIAsync()
-        {
-            Task t = Task.Factory.StartNew(() =>
-            {
-                UpdateUI();
-            });
-
-            return t;
+            UpdateUI();
         }
 
         private void UpdateUI()
         {
+            if (_isClosing)
+                return;
+
+            if (_updatingUI)
+                return;
+
+            _updatingUI = true;
+
             int nodes = 0;
 
             if (_group != null && !CanConnect())
@@ -254,7 +250,11 @@ namespace Knoledge_Monitor
                 UpdateStatusButton(string.Format("Connected to {0} nodes on {1}", nodes, Network.ToString()), nodes);
 
             int height = _chain.Tip == null ? 0 : _chain.Height;
-            int localHeight = _localChain.Tip == null ? 0 : _localChain.Height;
+            int localHeight = 0;
+            
+            if (_localChain != null)
+                localHeight = _localChain.Tip == null ? 0 : _localChain.Height;
+
             string chainStatus = string.Format("Local chain height = {0}", localHeight);
 
             if (localHeight != 0)
@@ -284,6 +284,8 @@ namespace Knoledge_Monitor
 
                 UpdateInfoButton(ChainStatus.OutofDate, chainStatus);
             }
+
+            _updatingUI = false;
         }
 
         public bool CanConnect()
@@ -306,6 +308,9 @@ namespace Knoledge_Monitor
 
         private void DisplayLocalInfo()
         {
+            if (_isClosing)
+                return;
+
             if (_localChain.Tip != null)
             {
                 var dateTime = _localChain.Tip.Header.BlockTime.ToLocalTime();
@@ -317,6 +322,9 @@ namespace Knoledge_Monitor
 
         private void SaveChainToDisk()
         {
+            if (_isClosing)
+                return;
+
             int locaHeight = _localChain.Tip == null ? 0 : _localChain.Height;
             int height = _chain.Tip == null ? 0 : _chain.Height;
 
@@ -337,10 +345,7 @@ namespace Knoledge_Monitor
                 ConcurrentChain chain = new ConcurrentChain();
                 try
                 {
-                    lock (_padlock)
-                    {
-                        chain.Load(File.ReadAllBytes(ChainFile));
-                    }
+                    chain.Load(File.ReadAllBytes(ChainFile));
                 }
                 catch
                 {
@@ -353,13 +358,17 @@ namespace Knoledge_Monitor
             return t;
         }
 
-        public async void Connect()
+        public void Connect()
         {
+            if (_isClosing)
+                return;
+
             EnableMenus(false, false, false, true);
             UpdateText(string.Format("{0} - Connecting to {1}...", DateTime.Now, Network.ToString()));
 
-            await ConnectAsync();
-            await UpdateUIAsync();
+            _cts = new CancellationTokenSource();
+            StartConnection();
+            UpdateUI();
         }
 
         private ChainBehavior GetChainBehaviour()
@@ -393,68 +402,68 @@ namespace Knoledge_Monitor
             }
         }
 
-        public Task ConnectAsync()
+        public async void StartConnection()
         {
-            if (_connecting) return null;
+            if (_cts.IsCancellationRequested)
+                return;
 
-            Task t = Task.Factory.StartNew(() =>
+            if (_connecting) 
+                return;
+
+            await Task.Factory.StartNew(() =>
             {
-                try
+                if (Monitor.TryEnter(_padlock))
                 {
-                    lock (_padlock)
+                    try
                     {
                         _connecting = true;
-                    }
 
-                    var parameters = new NodeConnectionParameters();
-                    ChainBehavior chainBehave = GetChainBehaviour();
-                    parameters.TemplateBehaviors.Add(chainBehave);
+                        var parameters = new NodeConnectionParameters();
+                        ChainBehavior chainBehave = GetChainBehaviour();
+                        parameters.TemplateBehaviors.Add(chainBehave);
 
-                    if (LocalConnection)
-                    {
-                        _group = GetNodesGroup(parameters);
-
-                        _node = Node.ConnectToLocal(Network);
-
-                        if (_chain.Tip != null && _node.Behaviors.Find<ChainBehavior>() != null)
-                            _node.Behaviors.Add(chainBehave);
-
-
-                        _group.ConnectedNodes.Add(_node);
-                        _connectionParameters = _group.NodeConnectionParameters;
-                    }
-                    else
-                    {
-                        if (parameters.TemplateBehaviors.Find<AddressManagerBehavior>() == null)
+                        if (LocalConnection)
                         {
-                            AddressManagerBehavior addMan = new AddressManagerBehavior(GetAddressManager());
-                            parameters.TemplateBehaviors.Add(addMan);
+                            _group = GetNodesGroup(parameters);
+
+                            _node = Node.ConnectToLocal(Network, ProtocolVersion.PROTOCOL_VERSION, true, _cts.Token);
+
+                            if (_chain.Tip != null && _node.Behaviors.Find<ChainBehavior>() != null)
+                                _node.Behaviors.Add(chainBehave);
+
+
+                            _group.ConnectedNodes.Add(_node);
+                            _connectionParameters = _group.NodeConnectionParameters;
                         }
+                        else
+                        {
+                            if (parameters.TemplateBehaviors.Find<AddressManagerBehavior>() == null)
+                            {
+                                AddressManagerBehavior addMan = new AddressManagerBehavior(GetAddressManager());
+                                parameters.TemplateBehaviors.Add(addMan);
+                            }
 
-                        _group = GetNodesGroup(parameters);
+                            _group = GetNodesGroup(parameters);
 
-                        _group.Connect();
-                        _connectionParameters = _group.NodeConnectionParameters;
+                            _group.Connect();
+                            _connectionParameters = _group.NodeConnectionParameters;
+                        }
                     }
-                }
-                catch (Exception e)
-                {
-                    EnableMenus(true, true, true, false);
-                    UpdateText(string.Format("{0} - Connection Failed...{1}", DateTime.Now, e.Message));
+                    catch (Exception e)
+                    {
+                        EnableMenus(true, true, true, false);
+                        UpdateText(string.Format("{0} - Connection Failed...{1}", DateTime.Now, e.Message));
 
-                    if (_localIPAddress == null)
-                        UpdateUIAsNotConnected();
-                }
-                finally
-                {
-                    lock (_padlock)
+                        if (_localIPAddress == null)
+                            UpdateUIAsNotConnected();
+                    }
+                    finally
                     {
                         _connecting = false;
+                        Monitor.Exit(_padlock);
                     }
                 }
-            });
-
-            return t;
+            }, _cts.Token);
         }
 
         private KnoledgeNodesGroup GetNodesGroup(NodeConnectionParameters parameters)
@@ -477,10 +486,11 @@ namespace Knoledge_Monitor
             return NativeCalls.InternetGetConnectedState(out description, 0);
         }
 
-        private void Disconnect()
+        private void Disconnect(string reason)
         {
             EnableMenus(true, true, true, false);
             UpdateText(string.Format("{0} - Disconnecting...", DateTime.Now));
+            _cts.Cancel(false);
 
             if (_group != null)
                 _group.Disconnect();
@@ -489,6 +499,7 @@ namespace Knoledge_Monitor
                 _node.Disconnect();
 
             UpdateText(string.Format("{0} - Disconnected...", DateTime.Now));
+            UpdateUI();
         }
 
         private void Node_MessageReceived(Node node, IncomingMessage message)
@@ -507,7 +518,7 @@ namespace Knoledge_Monitor
             UpdateText(text);
         }
 
-        private async void Node_StateChanged(Node node, NodeState oldState)
+        private void Node_StateChanged(Node node, NodeState oldState)
         {
             string text = string.Format("{0} - Node state changed to {1}.", DateTime.Now, node.State);
             UpdateText(text);
@@ -535,68 +546,72 @@ namespace Knoledge_Monitor
                 {
                     int latency = (int)behavior.Latency.TotalMilliseconds;
                     UpdateText(string.Format("{0} - Latency {1}ms", DateTime.Now, latency));
+                    behavior.Probe();
                 }
 
                 if (_chain.Tip == null || node.PeerVersion.StartHeight < _localChain.Height)
-                    await GetChainFromNode(node);
+                {
+                    GetChainFromNode(node);
+                    SaveChainToDisk();
+                    DisplayLocalInfo();
+                }
             }
+
+            UpdateUI();
         }
 
-        private Task GetChainFromNode(Node node)
+        private async void GetChainFromNode(Node node)
         {
-            Task t = Task.Factory.StartNew(() =>
-            {
-                if (_gettingChain) return;
+            if (_gettingChain)
+                return;
 
-                lock (_padlock)
+            await Task.Factory.StartNew(() =>
+            {
+                if (Monitor.TryEnter(_padlock))
                 {
                     _gettingChain = true;
-                }
 
-                _chain = node.GetChain();
-                SaveChainToDisk();
-                DisplayLocalInfo();
-
-                lock (_padlock)
-                {
-                    _gettingChain = false;
-                }
-            });
-
-            return t;
-        }
-
-        private Task SaveAsync()
-        {
-            Task t = Task.Factory.StartNew(() =>
-            {
-                lock (_padlock)
-                {
-                    Save();
+                    try
+                    {
+                        _chain = node.GetChain(null, _cts.Token);
+                    }
+                    catch { }
+                    finally 
+                    {
+                        _gettingChain = false;
+                        Monitor.Exit(_padlock);
+                    }
                 }
             });
-
-            return t;
         }
 
-        public bool Save()
+        private async void Save()
         {
-            bool saved = false;
+            if (_saving)
+                return;
 
-            try
+            await Task.Factory.StartNew(() =>
             {
-                AddressManager addr = GetAddressManager();
+                if (Monitor.TryEnter(_padlock))
+                {
+                    try
+                    {
+                        _saving = true;
+                        AddressManager addr = GetAddressManager();
 
-                if (addr != null)
-                    addr.SavePeerFile(AddrmanFile, Network);
+                        if (addr != null)
+                            addr.SavePeerFile(AddrmanFile, Network);
 
-                SaveChainToDisk();
-
-                saved = true;
-            }
-            catch { }
-
-            return saved;
+                        SaveChainToDisk();
+                    }
+                    catch { }
+                    finally
+                    {
+                        _saving = false;
+                        Monitor.Exit(_padlock);
+                    }
+                }
+            });
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
@@ -611,29 +626,28 @@ namespace Knoledge_Monitor
 
         private void disconnectToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Disconnect();
+            Disconnect("Requested by user.");
         }
 
         private void FormMain_FormClosing(object sender, FormClosingEventArgs e)
         {
             _isClosing = true;
 
-            Disconnect();
+            Disconnect("Application closing.");
         }
 
         private void FormMain_Load(object sender, EventArgs e)
         {
             NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
-            NetworkChange_NetworkAddressChanged(this, new EventArgs());
         }
 
-        private async void Timer_Tick(object sender, EventArgs e)
+        private void Timer_Tick(object sender, EventArgs e)
         {
             if (_isClosing)
                 return;
 
-            await UpdateUIAsync();
-            await SaveAsync();
+            UpdateUI();
+            Save();
         }
 
         private void NetworkChange_NetworkAddressChanged(object sender, EventArgs e)
@@ -643,18 +657,18 @@ namespace Knoledge_Monitor
             else
                 _localIPAddress = null;
 
-            if ((_oldIPAddress == null && _localIPAddress == null) ||
-                _oldIPAddress != null && _localIPAddress != null &&
-                _oldIPAddress.Equals(_localIPAddress))
-                return;
+            if (_localIPAddress == null)
+            {
+                Disconnect("No internet connection.");
+                UpdateUIAsNotConnected();
+            }
+            else
+            {
+                EnableMenus(true, true, true, false);
+            }
 
             string ip = _localIPAddress == null ? "not set" : _localIPAddress.ToString();
             UpdateText(string.Format("{0} - Client IP Address {1}", DateTime.Now, ip));
-
-            if (_localIPAddress == null)
-                Disconnect();
-            else
-                EnableMenus(true, true, true, false);
 
             _oldIPAddress = _localIPAddress;
         }
@@ -669,6 +683,8 @@ namespace Knoledge_Monitor
             _timer.Interval = 5000;
             _timer.Tick += Timer_Tick;
             _timer.Start();
+
+            NetworkChange_NetworkAddressChanged(this, new EventArgs());
         }
 
         #region IDisposable Members

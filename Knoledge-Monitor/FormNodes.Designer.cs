@@ -164,6 +164,7 @@
             this.columnHeader1});
             this.listView.FullRowSelect = true;
             this.listView.HeaderStyle = System.Windows.Forms.ColumnHeaderStyle.None;
+            this.listView.HideSelection = false;
             this.listView.Location = new System.Drawing.Point(12, 15);
             this.listView.Name = "listView";
             this.listView.Size = new System.Drawing.Size(365, 403);

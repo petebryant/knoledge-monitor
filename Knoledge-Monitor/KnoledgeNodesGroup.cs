@@ -33,7 +33,7 @@ namespace Knoledge_Monitor
                         {
                             _nodes.Add(node);
                             AddHandlers(node);
-                            StateChanged(node, NodeState.Offline);
+                            StateChanged(node, NodeState.Offline); // say it is offline to force the event to fire.
                         }
                     }
                     Thread.Sleep(50);
@@ -63,9 +63,15 @@ namespace Knoledge_Monitor
             }
         }
 
-        public new void Disconnect()
+        public void Disconnect(string reason = "")
         {
             _cts.Cancel(false);
+
+            // do this ourselves so a reason can be passed to the node
+            foreach (var node in ConnectedNodes)
+                node.DisconnectAsync(reason);
+
+            // call the base class just in case we missed something
             base.Disconnect();
         }
 
