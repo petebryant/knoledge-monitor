@@ -251,9 +251,17 @@ namespace Knoledge_Monitor
 
             int height = _chain.Tip == null ? 0 : _chain.Height;
             int localHeight = 0;
-            
+            bool outOfDate = true;
+
             if (_localChain != null)
+            {
+                DateTimeOffset date = _localChain.Tip.Header.BlockTime.ToLocalTime();
+                DateTimeOffset now = DateTimeOffset.Now;
+                TimeSpan difference = now - date;
+
+                outOfDate = difference.Minutes > 45;
                 localHeight = _localChain.Tip == null ? 0 : _localChain.Height;
+            }
 
             string chainStatus = string.Format("Local chain height = {0}", localHeight);
 
@@ -266,13 +274,12 @@ namespace Knoledge_Monitor
             {
                 if (height == 0 || height > localHeight)
                 {
+                    outOfDate = true;
                     UpdateStatusLabel("Synchronising...");
-                    UpdateInfoButton(ChainStatus.OutofDate, chainStatus);
                 }
                 else if (height == localHeight)
                 {
                     UpdateStatusLabel(string.Empty);
-                    UpdateInfoButton(ChainStatus.UptoDate, chainStatus);
                 }
             }
             else
@@ -281,9 +288,13 @@ namespace Knoledge_Monitor
                     UpdateStatusLabel(string.Format("Trying to connect to {0}...", Network.ToString()));
                 else
                     UpdateStatusLabel("Not connected...");
-
-                UpdateInfoButton(ChainStatus.OutofDate, chainStatus);
             }
+
+            if (outOfDate )
+                UpdateInfoButton(ChainStatus.OutofDate, chainStatus);
+            else
+                UpdateInfoButton(ChainStatus.UptoDate, chainStatus);
+
 
             _updatingUI = false;
         }
