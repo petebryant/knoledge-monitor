@@ -38,7 +38,6 @@ namespace Knoledge_Monitor
             InitializeComponent();
             comboBoxNetwork.SelectedIndex = _selectedNetwork;
             _initialised = true;
-
         }
 
         private Network Network
@@ -259,7 +258,7 @@ namespace Knoledge_Monitor
                 DateTimeOffset now = DateTimeOffset.Now;
                 TimeSpan difference = now - date;
 
-                outOfDate = difference.Minutes > 45;
+                outOfDate = difference.TotalMinutes > 45;
                 localHeight = _localChain.Tip == null ? 0 : _localChain.Height;
             }
 
@@ -267,7 +266,7 @@ namespace Knoledge_Monitor
 
             if (localHeight != 0)
             {
-                chainStatus = string.Format("{0}{1} Latest Block Time = {2}", chainStatus, Environment.NewLine, _localChain.Tip.Header.BlockTime.ToLocalTime().ToString("R"));
+                chainStatus = string.Format("{0}{1} Latest Block Date = {2}", chainStatus, Environment.NewLine, _localChain.Tip.Header.BlockTime.ToLocalTime().ToString("R"));
             }
 
             if (nodes > 0)
@@ -504,10 +503,10 @@ namespace Knoledge_Monitor
             _cts.Cancel(false);
 
             if (_group != null)
-                _group.Disconnect();
+                _group.Disconnect(reason);
 
             if (_node != null && _node.IsConnected)
-                _node.Disconnect();
+                _node.Disconnect(reason);
 
             UpdateText(string.Format("{0} - Disconnected...", DateTime.Now));
             UpdateUI();
@@ -698,6 +697,24 @@ namespace Knoledge_Monitor
             NetworkChange_NetworkAddressChanged(this, new EventArgs());
         }
 
+        private void comboBoxNetwork_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_initialised)
+                _selectedNetwork = comboBoxNetwork.SelectedIndex;
+
+        }
+
+        private void buttonStatus_Click(object sender, EventArgs e)
+        {
+            if (!CanConnect())
+            {
+                using (FormNodes form = new FormNodes(_group))
+                {
+                    form.ShowDialog();
+                }
+            }
+        }
+
         #region IDisposable Members
 
         protected override void Dispose(bool disposing)
@@ -730,23 +747,5 @@ namespace Knoledge_Monitor
         }
 
         #endregion
-
-        private void comboBoxNetwork_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (_initialised)
-            _selectedNetwork = comboBoxNetwork.SelectedIndex;
-
-        }
-
-        private void buttonStatus_Click(object sender, EventArgs e)
-        {
-            if (!CanConnect())
-            {
-                using (FormNodes form = new FormNodes(_group))
-                {
-                    form.ShowDialog();
-                }
-            }
-        }
     }
 }
