@@ -63,12 +63,12 @@ namespace Knoledge_Monitor
 
         private string AddrmanFile
         {
-            get { return Path.Combine(AppDir, "addrman.dat"); }
+            get { return Path.Combine(AppDir, string.Format("addrman{0}.dat", _selectedNetwork)); }
         }
 
         private string ChainFile
         {
-            get { return Path.Combine(AppDir, "chain.dat"); }
+            get { return Path.Combine(AppDir, string.Format("chain{0}.dat", _selectedNetwork)); }
         }
 
         private void UpdateText(string text)
@@ -252,7 +252,7 @@ namespace Knoledge_Monitor
             int localHeight = 0;
             bool outOfDate = true;
 
-            if (_localChain != null)
+            if (_localChain != null && _localChain.Tip != null)
             {
                 DateTimeOffset date = _localChain.Tip.Header.BlockTime.ToLocalTime();
                 DateTimeOffset now = DateTimeOffset.Now;
@@ -321,7 +321,7 @@ namespace Knoledge_Monitor
             if (_isClosing)
                 return;
 
-            if (_localChain.Tip != null)
+            if (_localChain.Tip != null )
             {
                 var dateTime = _localChain.Tip.Header.BlockTime.ToLocalTime();
 
@@ -559,7 +559,7 @@ namespace Knoledge_Monitor
                     behavior.Probe();
                 }
 
-                if (_chain.Tip == null || node.PeerVersion.StartHeight < _localChain.Height)
+                if (_chain.Tip == null || (_localChain != null && node.PeerVersion.StartHeight < _localChain.Height))
                 {
                     GetChainFromNode(node);
                     SaveChainToDisk();
