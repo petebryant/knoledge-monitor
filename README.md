@@ -1,6 +1,6 @@
 # knoledge-monitor
 
-This is the first of hopefully a number of applications using C# and NBitcoin that demonstrate Bitcoin, the network and  Blockchain.
+This is the first of hopefully a number of applications using C# and NBitcoin. Please bear in mind this is not production code but examples of using the NBitcoin API.
 
 This application connects to and monitors nodes on the Bitcoin network. Currently using TestNet the application utilises NBitcoins AddressManager and ChainBehaviour to connect to the Bitcoin network and obtain the Blockchain headers. It includes of the following funtions:
 
